@@ -1,0 +1,18 @@
+{
+  "name": "indetectable-window-project",
+  "version": "1.0.0",
+  "description": "Fucking code-interview",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^26.0.0"
+  },
+  "dependencies": {
+    "axios": "^1.11.0",
+    "dotenv": "^17.2.1"
+  }
+}
