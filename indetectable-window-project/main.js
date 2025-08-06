@@ -21,7 +21,7 @@ app.on('ready', () => {
       preload: path.join(__dirname, 'preload.js')
     },
     backgroundColor: 'rgba(153, 153, 153, 0)',
-    opacity: 0.5
+    opacity: 0.8
   });
 
   mainWindow.loadFile('index.html');
@@ -207,6 +207,173 @@ Responda como se fosse meu tutor me ajudando a praticar para entrevistas, sempre
       console.error('Error processing screenshots:', error);
       
       let errorMessage = 'Error processing screenshots.';
+      if (error.response) {
+        const status = error.response.status;
+        const data = error.response.data;
+        
+        if (status === 429) {
+          errorMessage = 'Rate limit exceeded. Please wait and try again.';
+        } else if (status === 401) {
+          errorMessage = 'API key invalid or unauthorized.';
+        } else if (status === 403) {
+          errorMessage = 'Access forbidden. Check your API key permissions.';
+        } else if (data && data.error && data.error.message) {
+          errorMessage = `API Error: ${data.error.message}`;
+        } else {
+          errorMessage = `HTTP Error ${status}: ${error.response.statusText}`;
+        }
+      } else if (error.request) {
+        errorMessage = 'Network error: Unable to reach OpenAI API.';
+      }
+      
+      mainWindow.webContents.executeJavaScript(
+        `document.querySelector('h1').innerText = ${JSON.stringify(errorMessage)};`
+      );
+    }
+  });
+
+  globalShortcut.register('Command+4', async () => {
+    try {
+      if (screenshotCount === 0) {
+        mainWindow.webContents.executeJavaScript(
+          `document.querySelector('h1').innerText = 'No screenshots to send. Take a screenshot first with Command+1.';`
+        );
+        return;
+      }
+
+      mainWindow.webContents.executeJavaScript(
+        `document.querySelector('h1').innerText = 'Loading architecture solution...';`
+      );
+
+      const screenshots = [];
+      for (let i = 1; i <= screenshotCount; i++) {
+        const screenshotPath = path.join(__dirname, `screenshot_${i}.png`);
+        if (fs.existsSync(screenshotPath)) {
+          const buffer = fs.readFileSync(screenshotPath);
+          const base64Image = buffer.toString('base64');
+          screenshots.push(base64Image);
+          console.log(`Loaded screenshot ${i} for architecture: ${base64Image.length} characters in base64`);
+        }
+      }
+
+      if (screenshots.length === 0) {
+        mainWindow.webContents.executeJavaScript(
+          `document.querySelector('h1').innerText = 'No screenshot files found.';`
+        );
+        return;
+      }
+
+      // Mensagem específica para design de sistemas/arquitetura
+      const messages = [
+        { role: 'system', content: 'You are a senior software architect and system design expert who helps students practice system design interviews.' },
+        { 
+          role: 'user', 
+          content: [
+            {
+              type: 'text',
+              text: `Analise a imagem que mostra um problema de design de sistema/arquitetura e me ajude a resolvê-lo. Por favor, responda em português seguindo este formato para design de sistemas:
+
+1. **Entendimento do Problema**
+   - Reformule o problema e identifique os requisitos funcionais e não-funcionais
+   - Estime a escala (usuários, dados, requests/segundo, etc.)
+
+2. **High-Level Design**
+   - Apresente uma arquitetura de alto nível com os principais componentes
+   - Explique o fluxo de dados entre os componentes
+
+3. **Diagrama de Arquitetura (ASCII Art)**
+   - Crie um diagrama visual simples usando caracteres ASCII
+   - Mostre as conexões entre componentes
+   - Use setas para indicar fluxo de dados
+   - Exemplo: Cliente -> Load Balancer -> API Gateway -> Microserviços -> Database
+
+4. **Componentes Detalhados**
+   - Detalhe cada componente principal (API Gateway, Load Balancer, Databases, Cache, etc.)
+   - Justifique as escolhas tecnológicas
+
+5. **Escalabilidade e Performance**
+   - Como o sistema pode escalar horizontalmente
+   - Estratégias de cache, sharding, replicação
+   - Pontos de gargalo e como resolvê-los
+
+6. **Confiabilidade e Disponibilidade**
+   - Como garantir alta disponibilidade
+   - Estratégias de failover e recovery
+   - Monitoramento e alertas
+
+7. **Segurança**
+   - Autenticação e autorização
+   - Proteção de dados
+   - Rate limiting e proteção contra ataques
+
+8. **Trade-offs e Alternativas**
+   - Principais trade-offs da solução proposta
+   - Alternativas consideradas e por que não foram escolhidas
+
+9. **Guia para Desenhar**
+   - Sugira ferramentas para criar o diagrama (draw.io, Lucidchart, Excalidraw)
+   - Dê dicas de como organizar visualmente os componentes
+   - Indique que cores/formas usar para diferentes tipos de componentes
+
+Responda como se fosse meu mentor em arquitetura de sistemas, de forma didática e prática, sempre explicando o "porquê" das decisões.`
+            },
+            {
+              type: 'image_url',
+              image_url: {
+                url: `data:image/png;base64,${screenshots[0]}`,
+                detail: "high"
+              }
+            }
+          ]
+        }
+      ];
+
+      console.log('Enviando para API (Architecture):', {
+        model: 'gpt-4o',
+        imageSize: screenshots[0].length,
+        hasImage: screenshots.length > 0,
+        type: 'system-design'
+      });
+
+      const response = await axios.post('https://api.openai.com/v1/chat/completions', {
+        model: 'gpt-4o',
+        messages: messages,
+        max_tokens: 16384
+      }, {
+        headers: {
+          'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const result = response.data.choices[0].message.content;
+
+      // Printar a resposta da API no terminal
+      console.log('Resposta da API (Architecture):', result);
+      
+      // Debug adicional
+      console.log('Finish reason:', response.data.choices[0].finish_reason);
+      console.log('Usage:', response.data.usage);
+
+      // Redirecionar o resultado para o elemento <h1>
+      mainWindow.webContents.executeJavaScript(
+        `document.querySelector('h1').innerText = ${JSON.stringify(result)};`
+      );
+
+      // Limpar screenshots após uso
+      for (let i = 1; i <= screenshotCount; i++) {
+        const screenshotPath = path.join(__dirname, `screenshot_${i}.png`);
+        if (fs.existsSync(screenshotPath)) {
+          fs.unlinkSync(screenshotPath);
+        }
+      }
+
+      screenshotCount = 0;
+
+    } catch (error) {
+      console.error('Error processing architecture screenshots:', error);
+      
+      let errorMessage = 'Error processing architecture screenshots.';
       if (error.response) {
         const status = error.response.status;
         const data = error.response.data;
